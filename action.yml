@@ -1,0 +1,65 @@
+name: Security findings to issues
+description: >-
+  Track each outstanding security finding as its own issue. One advisory is one
+  unit of work, so it gets one issue: opened when the finding appears, kept
+  current while it persists, and closed automatically once it is resolved.
+  Takes a JSONL file of findings so any scanner can feed it.
+
+inputs:
+  findings:
+    description: >-
+      Path to a JSONL file with one finding per line, each an object with
+      `key` (stable identity), `title`, and `body`.
+    required: true
+  label:
+    description: Label applied to, and used to find, every issue this action manages.
+    required: false
+    default: security
+  token:
+    description: "Token used for issue reads and writes. Needs `issues: write` permission."
+    required: true
+  max-new-issues:
+    description: >-
+      Most issues to open in a single run. A larger batch is deferred to the
+      next run rather than filed all at once, so a mistake in key generation
+      cannot flood the tracker.
+    required: false
+    default: "25"
+  retire-title:
+    description: >-
+      Title of a previous aggregate issue to close on the first run. Lets a
+      repository move off a single roll-up issue without leaving it open.
+    required: false
+    default: ""
+
+outputs:
+  outstanding:
+    description: Number of findings currently outstanding.
+    value: ${{ steps.sync.outputs.outstanding }}
+  created:
+    description: Number of issues opened by this run.
+    value: ${{ steps.sync.outputs.created }}
+  updated:
+    description: Number of issues whose body this run refreshed.
+    value: ${{ steps.sync.outputs.updated }}
+  closed:
+    description: Number of issues closed by this run because the finding is gone.
+    value: ${{ steps.sync.outputs.closed }}
+  deferred:
+    description: Number of new issues held back by max-new-issues.
+    value: ${{ steps.sync.outputs.deferred }}
+
+runs:
+  using: composite
+  steps:
+    - name: Sync findings to issues
+      id: sync
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        FINDINGS: ${{ inputs.findings }}
+        LABEL: ${{ inputs.label }}
+        MAX_NEW: ${{ inputs.max-new-issues }}
+        RETIRE_TITLE: ${{ inputs.retire-title }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: ${{ github.action_path }}/sync-findings.sh

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Stand-in for the gh CLI. Keeps issues in $GH_STATE so a test can drive a
+# whole create/update/close lifecycle without touching GitHub.
+set -euo pipefail
+python3 - "$@" <<'PY'
+import json, os, sys
+state_path = os.environ["GH_STATE"]
+state = json.load(open(state_path)) if os.path.exists(state_path) else {"issues": [], "calls": []}
+a = sys.argv[1:]
+state["calls"].append(" ".join(a))
+
+def save():
+    json.dump(state, open(state_path, "w"), indent=2)
+
+def opt(name, default=None):
+    return a[a.index(name) + 1] if name in a else default
+
+if a[:2] == ["label", "create"]:
+    save(); sys.exit(0)
+
+if a[:2] == ["issue", "list"]:
+    print(json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"]}
+                      for i in state["issues"] if i["state"] == "open"]))
+    save(); sys.exit(0)
+
+if a[:2] == ["issue", "create"]:
+    n = max([i["number"] for i in state["issues"]], default=0) + 1
+    state["issues"].append({"number": n, "title": opt("--title"), "state": "open",
+                            "body": open(opt("--body-file")).read(), "comments": []})
+    print(f"https://github.com/o/r/issues/{n}")
+    save(); sys.exit(0)
+
+if a[:2] == ["issue", "edit"]:
+    n = int(a[2])
+    for i in state["issues"]:
+        if i["number"] == n: i["body"] = open(opt("--body-file")).read()
+    save(); sys.exit(0)
+
+if a[:2] == ["issue", "close"]:
+    n = int(a[2])
+    for i in state["issues"]:
+        if i["number"] == n:
+            i["state"] = "closed"; i["comments"].append(opt("--comment", ""))
+    save(); sys.exit(0)
+
+sys.stderr.write(f"fake-gh: unsupported: {a}\n")
+sys.exit(2)
+PY
