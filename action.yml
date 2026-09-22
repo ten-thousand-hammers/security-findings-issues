@@ -25,6 +25,14 @@ inputs:
       cannot flood the tracker.
     required: false
     default: "25"
+  close-resolved:
+    description: >-
+      Whether an issue whose finding is absent should be closed. Pass false
+      when a scan did not complete: a scanner that could not run reports
+      nothing, which is indistinguishable from a clean result, so closing on
+      that run would retire findings that are still live.
+    required: false
+    default: "true"
   retire-title:
     description: >-
       Title of a previous aggregate issue to close on the first run. Lets a
@@ -61,5 +69,6 @@ runs:
         LABEL: ${{ inputs.label }}
         MAX_NEW: ${{ inputs.max-new-issues }}
         RETIRE_TITLE: ${{ inputs.retire-title }}
+        CLOSE_RESOLVED: ${{ inputs.close-resolved }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: ${{ github.action_path }}/sync-findings.sh

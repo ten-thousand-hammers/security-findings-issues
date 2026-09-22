@@ -9,6 +9,7 @@ set -euo pipefail
 LABEL="${LABEL:-security}"
 MAX_NEW="${MAX_NEW:-25}"
 RETIRE_TITLE="${RETIRE_TITLE:-}"
+CLOSE_RESOLVED="${CLOSE_RESOLVED:-true}"
 RUN_URL="${RUN_URL:-}"
 MARKER_PREFIX='<!-- security-finding:'
 
@@ -100,8 +101,15 @@ while IFS= read -r finding; do
   fi
 done < "$findings"
 
-# Anything this action owns without a matching finding has been fixed.
+# Anything this action owns without a matching finding has been fixed --
+# unless the caller says a scan did not complete. A run where the scanner
+# could not execute reports no findings for it, which is indistinguishable
+# from clean, so closing on that run would retire live findings.
+if [ "$CLOSE_RESOLVED" != "true" ]; then
+  echo "::warning::Not closing anything: the caller reported an incomplete scan. Resolved findings close on the next healthy run."
+fi
 while IFS=$'\t' read -r number key; do
+  [ "$CLOSE_RESOLVED" = "true" ] || continue
   [ -n "$key" ] || continue
   if ! jq -e --arg k "$key" 'select(.key == $k)' "$findings" >/dev/null 2>&1; then
     comment="No longer reported as of $(date -u '+%Y-%m-%d')."

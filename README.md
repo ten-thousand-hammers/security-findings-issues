@@ -46,6 +46,7 @@ The job needs `issues: write`.
 | `token` | required | Needs `issues: write`. |
 | `label` | `security` | Applied to, and used to find, every issue this action manages. |
 | `max-new-issues` | `25` | Most issues to open in one run. The rest wait for the next run. |
+| `close-resolved` | `true` | Whether to close an issue whose finding is absent. Pass `false` when a scan did not complete. |
 | `retire-title` | none | Title of a previous aggregate issue to close on the run that replaces it. |
 
 ### Outputs
@@ -90,6 +91,26 @@ moving. Do not put a line number in a key.
 
 Duplicate keys, or a finding missing `key`, `title`, or `body`, fail the run
 rather than mistracking every run after it.
+
+## A scan that did not run is not a clean result
+
+A scanner that fails reports no findings, which is indistinguishable from
+finding nothing. If the action closed on that, a broken advisory-database
+fetch would quietly retire every live finding in the repository.
+
+Emit a `scan/<name>` finding when a scan cannot complete, and pass
+`close-resolved: false` on that run:
+
+```yaml
+- uses: ten-thousand-hammers/security-findings-issues@v1
+  with:
+    findings: ${{ runner.temp }}/findings.jsonl
+    token: ${{ secrets.GITHUB_TOKEN }}
+    close-resolved: ${{ steps.collect.outputs.all-scans-ran }}
+```
+
+New findings are still filed and existing ones still updated; only closing is
+withheld, and the next healthy run closes whatever is genuinely fixed.
 
 ## Safety valve
 

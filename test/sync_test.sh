@@ -27,7 +27,7 @@ setup() {
   WORK="$(mktemp -d)"
   export GH_STATE="$WORK/state.json"
   export GITHUB_OUTPUT="$WORK/output"
-  export LABEL=security MAX_NEW=25 RETIRE_TITLE="" RUN_URL="https://run/1"
+  export LABEL=security MAX_NEW=25 RETIRE_TITLE="" RUN_URL="https://run/1" CLOSE_RESOLVED=true
   printf '{"issues": [], "calls": []}' > "$GH_STATE"
   : > "$GITHUB_OUTPUT"
 }
@@ -122,6 +122,30 @@ export MAX_NEW=25
 run_sync "$WORK/three.jsonl"
 check "next run files the rest" "1" "$(out created)"
 check "all three open" "3" "$(open_count)"
+
+echo "== close-resolved=false keeps issues while a scan is broken =="
+setup
+{ finding "gem/rack/CVE-1" "rack: CVE-1" "Upgrade rack."
+  finding "gem/nokogiri/CVE-2" "nokogiri: CVE-2" "Upgrade nokogiri."; } > "$WORK/two.jsonl"
+run_sync "$WORK/two.jsonl"
+check "two opened" "2" "$(out created)"
+# The gem scan broke, so it reports only its own failure. Both gem findings
+# are missing, but they are missing because nothing looked, not because the
+# advisories were fixed.
+{ finding "scan/bundler-audit" "bundler-audit could not complete" "It exited 1."; } > "$WORK/broken.jsonl"
+export CLOSE_RESOLVED=false
+run_sync "$WORK/broken.jsonl"
+check "exit 0" "0" "$RC"
+check "scan failure filed" "1" "$(out created)"
+check "nothing closed" "0" "$(out closed)"
+check "both gem issues still open" "3" "$(open_count)"
+check "warns that it withheld closing" "yes" "$(contains '::warning::Not closing anything' "$OUT")"
+# The next healthy run closes what is genuinely fixed.
+export CLOSE_RESOLVED=true
+run_sync "$WORK/two.jsonl"
+check "scan issue closed once the scan works" "1" "$(out closed)"
+check "two gem issues remain" "2" "$(open_count)"
+unset CLOSE_RESOLVED
 
 echo "== retire-title closes a previous aggregate issue =="
 setup
