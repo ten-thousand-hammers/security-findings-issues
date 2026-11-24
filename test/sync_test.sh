@@ -21,6 +21,7 @@ states()     { python3 "$ROOT/test/inspect.py" states; }
 open_count() { python3 "$ROOT/test/inspect.py" open-count; }
 edits()      { python3 "$ROOT/test/inspect.py" edit-calls; }
 body()       { python3 "$ROOT/test/inspect.py" body "$1"; }
+comments()   { python3 "$ROOT/test/inspect.py" comments "$1"; }
 out()        { local v; v="$(grep "^$1=" "$GITHUB_OUTPUT" 2>/dev/null | cut -d= -f2)"; echo "${v:-unset}"; }
 
 setup() {
@@ -162,6 +163,44 @@ check "per-finding issue opened" "1" "$(out created)"
 check "aggregate not counted as a finding" "0" "$(out closed)"
 run_sync "$WORK/f4.jsonl"
 check "retiring is idempotent" "1:closed 2:open" "$(states)"
+
+echo "== a broader key absorbs narrower ones and points them at it =="
+setup
+{ finding "gem/net-ssh/GHSA-1" "net-ssh: GHSA-1" "x"
+  finding "gem/net-ssh/GHSA-2" "net-ssh: GHSA-2" "x"
+  finding "gem/rack/CVE-1" "rack: CVE-1" "x"; } > "$WORK/narrow.jsonl"
+run_sync "$WORK/narrow.jsonl"
+check "three opened" "3" "$(out created)"
+{ finding "gem/net-ssh" "net-ssh: 2 advisories" "x"
+  finding "gem/rack" "rack: CVE-1" "x"; } > "$WORK/grouped.jsonl"
+run_sync "$WORK/grouped.jsonl"
+check "two grouped issues opened" "2" "$(out created)"
+check "old issues closed" "1:closed 2:closed 3:closed 4:open 5:open" "$(states)"
+check "points at the gem issue" "yes" "$(contains 'Now tracked in #4' "$(comments 1)")"
+check "rack points at its own" "yes" "$(contains 'Now tracked in #5' "$(comments 3)")"
+check "not reported as fixed" "no" "$(contains 'No longer reported' "$(comments 2)")"
+
+echo "== a sibling with a shared prefix is not a parent =="
+setup
+{ finding "gem/net-ssh/GHSA-1" "a" "x"; } > "$WORK/a.jsonl"
+run_sync "$WORK/a.jsonl"
+{ finding "gem/net" "b" "x"; } > "$WORK/b.jsonl"
+run_sync "$WORK/b.jsonl"
+check "closed as resolved" "yes" "$(contains 'No longer reported' "$(comments 1)")"
+
+echo "== an absorbed issue waits for a deferred replacement =="
+setup
+{ finding "gem/a/1" "a1" "x"; finding "gem/b/1" "b1" "x"; } > "$WORK/n.jsonl"
+run_sync "$WORK/n.jsonl"
+export MAX_NEW=1
+{ finding "gem/a" "a" "x"; finding "gem/b" "b" "x"; } > "$WORK/g.jsonl"
+run_sync "$WORK/g.jsonl"
+check "one replacement filed" "1" "$(out created)"
+check "only its predecessor closed" "1:closed 2:open 3:open" "$(states)"
+export MAX_NEW=25
+run_sync "$WORK/g.jsonl"
+check "next run finishes the move" "1:closed 2:closed 3:open 4:open" "$(states)"
+check "and points at it" "yes" "$(contains 'Now tracked in #4' "$(comments 2)")"
 
 echo
 echo "$pass passed, $fail failed"

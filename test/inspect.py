@@ -15,5 +15,8 @@ elif what == "edit-calls":
 elif what == "body":
     n = int(sys.argv[2])
     print(next((i["body"] for i in issues if i["number"] == n), ""))
+elif what == "comments":
+    n = int(sys.argv[2])
+    print("\n".join(next((i["comments"] for i in issues if i["number"] == n), [])))
 else:
     sys.exit("unknown query: %s" % what)

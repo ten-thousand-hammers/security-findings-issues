@@ -1,6 +1,6 @@
 name: Security findings to issues
 description: >-
-  Track each outstanding security finding as its own issue. One advisory is one
+  Track each outstanding security finding as its own issue. One finding is one
   unit of work, so it gets one issue: opened when the finding appears, kept
   current while it persists, and closed automatically once it is resolved.
   Takes a JSONL file of findings so any scanner can feed it.

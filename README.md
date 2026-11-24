@@ -2,9 +2,10 @@
 
 Track each outstanding security finding as its own issue.
 
-A CVE against one gem is one unit of work, so it gets one issue. Three findings
-get three issues, each of which can be closed as it is actually fixed. That is
-the whole point: a single rolled-up "outstanding advisories" issue cannot be
+A finding is one unit of work, so it gets one issue that can be closed as it is
+actually fixed. What counts as one unit is the producer's call: nine advisories
+against one gem are fixed by one upgrade, so bundler-audit-findings reports
+them as one finding. That is the whole point: a single rolled-up "outstanding advisories" issue cannot be
 closed until everything on it is done, so it stays open indefinitely and stops
 being read.
 
@@ -81,13 +82,25 @@ issue persist rather than churn:
 
 | source | key |
 | --- | --- |
-| bundler-audit | `gem/<name>/<advisory id>` |
-| npm audit | `npm/<package>/<advisory id>` |
+| bundler-audit | `gem/<name>` |
+| npm audit | `npm/<package>` |
 | Brakeman | `brakeman/<fingerprint>` |
 | a scan that failed to run | `scan/<name>` |
 
 Brakeman's `fingerprint` is designed for exactly this and survives the line
 moving. Do not put a line number in a key.
+
+Key a finding at the level it gets fixed. A dependency is fixed by upgrading
+it, so key it by package and list its advisories in the body; a changed body
+refreshes the issue rather than opening another.
+
+### Coarsening a key
+
+When a producer moves from `gem/<name>/<advisory id>` to `gem/<name>`, the old
+issues are not fixed, they are absorbed. An issue whose key is a path-child of a
+current finding's key is closed as "not planned" with a pointer to the new
+issue, not reported as resolved. If the new issue was deferred by
+`max-new-issues`, the old ones stay open until it is filed.
 
 Duplicate keys, or a finding missing `key`, `title`, or `body`, fail the run
 rather than mistracking every run after it.
