@@ -65,6 +65,10 @@ jq -r --arg p "$MARKER_PREFIX" '
 
 created=0; updated=0; closed=0; deferred=0; unchanged=0
 
+# number -> key for every finding that has an issue after this run, so a
+# closed issue can point at the one that took over its work.
+: > "$work/tracked.tsv"
+
 while IFS= read -r finding; do
   [ -n "$finding" ] || continue
   key="$(printf '%s' "$finding" | jq -r '.key')"
@@ -91,12 +95,14 @@ while IFS= read -r finding; do
       echo "updated    #$number  $key"
       updated=$((updated + 1))
     fi
+    printf '%s\t%s\n' "$number" "$key" >> "$work/tracked.tsv"
   elif [ "$created" -ge "$MAX_NEW" ]; then
     echo "deferred   (cap $MAX_NEW)  $key"
     deferred=$((deferred + 1))
   else
     url="$(gh issue create --title "$title" --label "$LABEL" --body-file "$work/body.md" </dev/null)"
     echo "opened     $url  $key"
+    printf '%s\t%s\n' "${url##*/}" "$key" >> "$work/tracked.tsv"
     created=$((created + 1))
   fi
 done < "$findings"
@@ -111,7 +117,26 @@ fi
 while IFS=$'\t' read -r number key; do
   [ "$CLOSE_RESOLVED" = "true" ] || continue
   [ -n "$key" ] || continue
-  if ! jq -e --arg k "$key" 'select(.key == $k)' "$findings" >/dev/null 2>&1; then
+  # Exact match on the key list rather than `jq -e`, whose exit status on
+  # multi-line input differs between jq 1.6 and 1.7.
+  if ! jq -r '.key' "$findings" | grep -Fxq -- "$key"; then
+    # A finding whose key is a parent of this one (gem/net-ssh over
+    # gem/net-ssh/GHSA-...) has absorbed it: the work moved, it was not fixed.
+    parent="$(jq -r --arg k "$key" 'select(.key as $p | $k | startswith($p + "/")) | .key' \
+      "$findings" | awk '{ print length "\t" $0 }' | sort -rn | head -1 | cut -f2-)"
+    if [ -n "$parent" ]; then
+      successor="$(awk -F'\t' -v k="$parent" '$2 == k { print $1; exit }' "$work/tracked.tsv")"
+      if [ -z "$successor" ]; then
+        # Its replacement was deferred by the cap. Keep this one until it exists.
+        echo "kept       #$number  $key  (replacement $parent not filed yet)"
+        continue
+      fi
+      gh issue close "$number" --reason "not planned" \
+        --comment "Now tracked in #$successor along with the other findings for \`$parent\`." </dev/null >/dev/null
+      echo "merged     #$number  $key  -> #$successor"
+      closed=$((closed + 1))
+      continue
+    fi
     comment="No longer reported as of $(date -u '+%Y-%m-%d')."
     if [ -n "$RUN_URL" ]; then comment="$comment Closed by [this run]($RUN_URL)."; fi
     gh issue close "$number" --comment "$comment" </dev/null >/dev/null
